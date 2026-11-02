@@ -1,5 +1,7 @@
 # Fantaisie 3D: loja virtual Brasil + Canadá
 
+> **Quer só abrir o site no seu computador?** Siga o guia passo a passo **[COMO-ABRIR.md](COMO-ABRIR.md)**.
+
 E-commerce da **Fantaisie 3D** para produtos impressos em 3D, com duas operações comerciais independentes:
 
 | Loja | URL | Idioma | Moeda | Pagamento previsto |
