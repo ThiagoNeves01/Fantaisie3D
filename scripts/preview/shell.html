@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fantaisie 3D: prévia do site</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Sora:wght@500;600&display=swap">
+<style>
+  :root { --ink:#101113; --graphite:#24272b; --metal:#f1f1f3; --volt:#00dce8; --teal:#087f89; --mute:#a3a8b0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--ink); color: var(--metal); font: 14px/1.4 Inter, system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; }
+  .bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid rgb(255 255 255 / .08); flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; min-width: 0; }
+  .brand img { width: 34px; height: 34px; }
+  .brand h1 { margin: 0; font: 600 15px Sora, sans-serif; letter-spacing: -.01em; white-space: nowrap; }
+  .brand h1 span { color: var(--mute); font-weight: 500; }
+  .seg { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--graphite); gap: 2px; }
+  .seg button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--mute); padding: 7px 12px; border-radius: 999px; font: 500 13px Inter, sans-serif; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--metal); color: var(--ink); }
+  .seg button:hover:not([aria-pressed="true"]) { color: #fff; }
+  .seg svg { border-radius: 2px; }
+  select { appearance: none; background: var(--graphite) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23a3a8b0' stroke-width='2'%3E%3Cpath d='m2 4 4 4 4-4'/%3E%3C/svg%3E") no-repeat right 12px center; color: var(--metal); border: 0; border-radius: 999px; padding: 9px 34px 9px 14px; font: 500 13px Inter, sans-serif; max-width: 280px; cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--volt); outline-offset: 2px; }
+  .note { display: flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: 12.5px; color: var(--mute); border-bottom: 1px solid rgb(255 255 255 / .06); }
+  .note b { color: var(--metal); font-weight: 500; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--volt); flex-shrink: 0; }
+  .stage { flex: 1; min-height: 0; display: flex; justify-content: center; align-items: stretch; background: var(--ink); overflow: auto; }
+  .frame { width: 100%; height: 100%; border: 0; background: #fff; display: block; }
+  .stage.tablet, .stage.mobile { padding: 20px; background: radial-gradient(ellipse at 50% 40%, #1c1f23, var(--ink) 70%); }
+  .stage.tablet .frame { width: 820px; max-width: 100%; height: 1080px; max-height: 100%; border-radius: 24px; box-shadow: 0 0 0 10px #1a1c20, 0 30px 80px -20px #000; }
+  .stage.mobile .frame { width: 390px; max-width: 100%; height: 844px; max-height: 100%; border-radius: 36px; box-shadow: 0 0 0 10px #1a1c20, 0 0 0 11px rgb(255 255 255 / .1), 0 30px 80px -20px #000; }
+  @media (max-width: 720px) {
+    .brand h1 span, .devlabel { display: none; }
+    select { max-width: 52vw; }
+    .note { display: none; }
+  }
+</style>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand"><img src="brand/emblem-96.png" alt=""><h1>Fantaisie 3D <span>· prévia do site</span></h1></div>
+    <div class="seg" role="group" aria-label="Loja" id="stores"></div>
+    <label><span class="sr" style="position:absolute;left:-9999px">Página</span><select id="pages" aria-label="Página"></select></label>
+    <div class="seg" role="group" aria-label="Tamanho da tela" id="devices">
+      <button data-d="desktop" aria-pressed="true" title="Computador"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="1.5" y="2.5" width="13" height="9" rx="1.5"/><path d="M5 14.5h6"/></svg><span class="devlabel">Computador</span></button>
+      <button data-d="tablet" aria-pressed="false" title="Tablet"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="1.5" width="10" height="13" rx="1.5"/></svg><span class="devlabel">Tablet</span></button>
+      <button data-d="mobile" aria-pressed="false" title="Celular"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="4.5" y="1.5" width="7" height="13" rx="1.5"/></svg><span class="devlabel">Celular</span></button>
+    </div>
+  </header>
+  <p class="note"><span class="dot"></span><span><b>Prévia navegável da Fase 1.</b> Navegue pelos links, troque o país pela bandeira e veja no celular. Carrinho, login e formulários aparecem como foram capturados; para usá-los de verdade, rode o site pelo guia COMO-ABRIR.md.</span></p>
+  <main class="stage" id="stage"><iframe class="frame" id="frame" title="Site Fantaisie 3D"></iframe></main>
+
+<script>
+  var PAGES = /*PAGES*/[];
+  var byName = {}; PAGES.forEach(function (p) { byName[p.name] = p; });
+  var STORES = [
+    { key: "pt-BR", label: "PT", title: "Brasil — Português", flag: "br", home: "br" },
+    { key: "en-CA", label: "EN", title: "Canada — English", flag: "ca", home: "ca-en" },
+    { key: "fr-CA", label: "FR", title: "Canada — Français", flag: "ca", home: "ca-fr" },
+  ];
+  var FLAGS = {
+    br: '<svg viewBox="0 0 30 21" width="20" height="14"><rect width="30" height="21" rx="2.5" fill="#009C3B"/><path d="M15 2.6 27 10.5 15 18.4 3 10.5Z" fill="#FFDF00"/><circle cx="15" cy="10.5" r="4.6" fill="#002776"/></svg>',
+    ca: '<svg viewBox="0 0 30 21" width="20" height="14"><rect width="30" height="21" rx="2.5" fill="#fff"/><rect width="7.5" height="21" fill="#D52B1E"/><rect x="22.5" width="7.5" height="21" fill="#D52B1E"/><path fill="#D52B1E" d="M15 3.6l1 2 1.2-.6-.5 3 1.8-1.8.3 1 1.9-.3-.6 2 .7.4-2.7 2.2.3 1.2-2.6-.5.1 3.1h-.6l.1-3.1-2.6.5.3-1.2-2.7-2.2.7-.4-.6-2 1.9.3.3-1 1.8 1.8-.5-3 1.2.6Z"/></svg>',
+  };
+  var HOME_LABEL = { br: "Início", "ca-en": "Home", "ca-fr": "Accueil" };
+  var GROUPS = {
+    "pt-BR": ["Páginas principais", "Categorias", "Produtos", "Carrinho e conta", "Institucional"],
+    "en-CA": ["Main pages", "Categories", "Products", "Cart and account", "Company & legal"],
+    "fr-CA": ["Pages principales", "Catégories", "Produits", "Panier et compte", "Entreprise et légal"],
+  };
+  function groupOf(p) {
+    var seg = p.path.split("/").filter(Boolean).slice(p.path.indexOf("/ca/") === 0 ? 2 : 1);
+    if (p.group === "cart" || p.group === "account") return 3;
+    if (/^(produto|product|produit)$/.test(seg[0])) return 2;
+    if (/^(categoria|category|categorie)$/.test(seg[0])) return 1;
+    if (/^(perguntas-frequentes|faq|privacidade|privacy|confidentialite|termos|terms|conditions|trocas-e-devolucoes|returns|retours|envio|shipping|livraison|sobre|about|a-propos)$/.test(seg[0] || "")) return 4;
+    return 0;
+  }
+
+  var frame = document.getElementById("frame");
+  var sel = document.getElementById("pages");
+  var current = null;
+
+  function storeOf(p) { return p ? p.lang : "pt-BR"; }
+
+  function renderStores() {
+    var lang = storeOf(byName[current]);
+    document.getElementById("stores").innerHTML = STORES.map(function (s) {
+      return '<button data-s="' + s.key + '" aria-pressed="' + (s.key === lang) + '" title="' + s.title + '">' + FLAGS[s.flag] + s.label + "</button>";
+    }).join("");
+  }
+  function renderSelect() {
+    var lang = storeOf(byName[current]);
+    var list = PAGES.filter(function (p) { return p.lang === lang; });
+    var html = "";
+    GROUPS[lang].forEach(function (g, i) {
+      var items = list.filter(function (p) { return groupOf(p) === i; });
+      if (!items.length) return;
+      html += '<optgroup label="' + g + '">' + items.map(function (p) {
+        var label = HOME_LABEL[p.name] || p.title;
+        return '<option value="' + p.name + '"' + (p.name === current ? " selected" : "") + ">" + label.replace(/</g, "&lt;") + "</option>";
+      }).join("") + "</optgroup>";
+    });
+    sel.innerHTML = html;
+  }
+  function setHash(n) { try { history.replaceState(null, "", "#" + n); } catch (e) {} }
+  function sync(n) {
+    if (!byName[n]) return;
+    current = n; setHash(n); renderStores(); renderSelect();
+  }
+  function go(n) {
+    if (!byName[n]) n = "br";
+    sync(n);
+    frame.src = "p/" + n + ".html";
+  }
+
+  sel.addEventListener("change", function () { go(sel.value); });
+  document.getElementById("stores").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    var s = STORES.filter(function (x) { return x.key === b.dataset.s; })[0];
+    var page = byName[current];
+    go((page && page.alts && page.alts[s.key]) || s.home);
+  });
+  document.getElementById("devices").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    document.querySelectorAll("#devices button").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+    document.getElementById("stage").className = "stage " + (b.dataset.d === "desktop" ? "" : b.dataset.d);
+  });
+  window.addEventListener("message", function (e) {
+    if (e.data && e.data.type === "f3d-page") sync(e.data.name);
+  });
+  window.addEventListener("hashchange", function () {
+    var n = location.hash.slice(1); if (n && n !== current) go(n);
+  });
+  go(location.hash.slice(1) || "br");
+</script>
+</body>
+</html>
