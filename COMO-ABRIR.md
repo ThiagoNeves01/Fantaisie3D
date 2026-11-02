@@ -194,6 +194,13 @@ Para restaurar os produtos de exemplo originais, rode `npm run db:seed`. Ele nã
 
 ## Problemas comuns
 
+**Windows: "npm.ps1 não pode ser carregado porque a execução de scripts foi desabilitada neste sistema"**
+É uma trava padrão do PowerShell. Libere uma vez com:
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+Responda `S` se ele perguntar e rode o comando `npm` de novo. Outra opção é usar `npm.cmd` no lugar de `npm` (por exemplo, `npm.cmd install`) ou abrir o **Prompt de Comando** em vez do PowerShell.
+
 **"npm" ou "node" não é reconhecido como comando**
 O Node.js não foi instalado ou o terminal estava aberto antes da instalação. Feche e abra o terminal. Se continuar, reinstale o Node.js.
 
