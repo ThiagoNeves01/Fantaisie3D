@@ -1,0 +1,464 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>html,body{margin:0;background:transparent}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"/three/build/three.module.js","three/addons/":"/three/examples/jsm/"}}</script>
+</head>
+<body>
+<script type="module">
+import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+
+const SIZE = 1200;
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
+renderer.setPixelRatio(1);
+renderer.setSize(SIZE, SIZE);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+// Textura de linhas de camada (impressão FDM)
+function layerTexture(lines = 220) {
+  const c = document.createElement("canvas"); c.width = 8; c.height = 1024;
+  const g = c.getContext("2d");
+  const h = 1024 / lines;
+  for (let i = 0; i < lines; i++) {
+    const y = i * h;
+    const grd = g.createLinearGradient(0, y, 0, y + h);
+    grd.addColorStop(0, "#5a5a5a"); grd.addColorStop(0.5, "#ffffff"); grd.addColorStop(1, "#5a5a5a");
+    g.fillStyle = grd; g.fillRect(0, y, 8, h);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+const layers = layerTexture();
+
+function mat(hex, opts = {}) {
+  const m = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(hex), roughness: opts.roughness ?? 0.52, metalness: opts.metalness ?? 0.0,
+    bumpMap: opts.noLayers ? null : layers, bumpScale: opts.bump ?? 0.6,
+  });
+  if (opts.repeat) { m.bumpMap = layers.clone(); m.bumpMap.repeat.set(1, opts.repeat); m.bumpMap.needsUpdate = true; }
+  return m;
+}
+function mesh(geo, material, cast = true) {
+  const m = new THREE.Mesh(geo, material); m.castShadow = cast; m.receiveShadow = true; return m;
+}
+// UV planar vertical (y) para que as camadas fiquem horizontais em qualquer geometria
+function planarY(geo, scale = 1) {
+  geo.computeBoundingBox();
+  const pos = geo.attributes.position; const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) { uv[i*2] = (pos.getX(i) + pos.getZ(i)) * 0.5; uv[i*2+1] = pos.getY(i) * scale; }
+  geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  return geo;
+}
+
+// ───────── Produtos ─────────
+const P = {};
+
+P.vase = (c) => { // Vaso espiral "Onda"
+  const g = new THREE.Group();
+  const pts = [];
+  for (let i = 0; i <= 80; i++) {
+    const t = i / 80; const y = t * 2.6;
+    const r = 0.55 + 0.42 * Math.sin(t * Math.PI * 0.95 + 0.25) - 0.18 * t + 0.06 * Math.sin(t * 18);
+    pts.push(new THREE.Vector2(Math.max(r, 0.3), y));
+  }
+  const geo = new THREE.LatheGeometry(pts, 160);
+  // torção + nervuras
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const a = Math.atan2(z, x); const r = Math.hypot(x, z);
+    const rib = 1 + 0.045 * Math.cos(a * 14 + y * 2.2);
+    p.setX(i, Math.cos(a) * r * rib); p.setZ(i, Math.sin(a) * r * rib);
+  }
+  geo.computeVertexNormals(); planarY(geo, 0.9);
+  const m = mesh(geo, mat(c[0], { bump: 0.9 })); m.material.side = THREE.DoubleSide;
+  g.add(m);
+  return g;
+};
+
+P.penholder = (c) => { // Porta-canetas twist + lápis
+  const g = new THREE.Group();
+  const shape = new THREE.Shape();
+  const n = 8;
+  for (let i = 0; i <= n * 8; i++) {
+    const a = (i / (n * 8)) * Math.PI * 2; const r = 0.62 + 0.06 * Math.cos(a * n);
+    i === 0 ? shape.moveTo(Math.cos(a) * r, Math.sin(a) * r) : shape.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  const hole = new THREE.Path(); hole.absarc(0, 0, 0.52, 0, Math.PI * 2, true); shape.holes.push(hole);
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: 1.7, bevelEnabled: false, steps: 60, curveSegments: 64 });
+  geo.rotateX(-Math.PI / 2);
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i); const t = y * 0.55;
+    p.setX(i, x * Math.cos(t) - z * Math.sin(t)); p.setZ(i, x * Math.sin(t) + z * Math.cos(t));
+  }
+  geo.computeVertexNormals(); planarY(geo, 1.3);
+  g.add(mesh(geo, mat(c[0])));
+  const base = mesh(planarY(new THREE.CylinderGeometry(0.58, 0.58, 0.08, 64)), mat(c[0])); base.position.y = 0.04; g.add(base);
+  const pencilCols = ["#F2C14E", "#E4572E", "#2E86AB", "#F1F1F3"];
+  pencilCols.forEach((pc, i) => {
+    const pg = new THREE.Group();
+    const body = mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.0, 6), new THREE.MeshStandardMaterial({ color: pc, roughness: 0.5 }));
+    const tip = mesh(new THREE.ConeGeometry(0.06, 0.16, 6), new THREE.MeshStandardMaterial({ color: "#d9b38c", roughness: 0.7 }));
+    tip.position.y = 1.08; body.add(tip); pg.add(body);
+    pg.position.set(Math.cos(i * 1.7) * 0.25, 1.3, Math.sin(i * 1.7) * 0.25);
+    pg.rotation.z = (i - 1.5) * 0.12; pg.rotation.x = Math.sin(i) * 0.12;
+    g.add(pg);
+  });
+  return g;
+};
+
+P.hexorganizer = (c) => { // Organizador de mesa colmeia
+  const g = new THREE.Group();
+  const cells = [[0,0,1.2],[1,0,0.8],[-1,0,1.0],[0.5,0.87,0.6],[-0.5,0.87,1.4],[0.5,-0.87,0.9],[-0.5,-0.87,0.7]];
+  cells.forEach(([x, z, h], i) => {
+    const s = new THREE.Shape(); const R = 0.58, r = 0.5;
+    for (let k = 0; k <= 6; k++) { const a = k * Math.PI / 3 + Math.PI / 6; k ? s.lineTo(Math.cos(a)*R, Math.sin(a)*R) : s.moveTo(Math.cos(a)*R, Math.sin(a)*R); }
+    const hole = new THREE.Path(); for (let k = 0; k <= 6; k++) { const a = -k * Math.PI / 3 + Math.PI / 6; k ? hole.lineTo(Math.cos(a)*r, Math.sin(a)*r) : hole.moveTo(Math.cos(a)*r, Math.sin(a)*r); }
+    s.holes.push(hole);
+    const geo = new THREE.ExtrudeGeometry(s, { depth: h, bevelEnabled: true, bevelSize: 0.015, bevelThickness: 0.015, bevelSegments: 2 });
+    geo.rotateX(-Math.PI / 2); planarY(geo, 1.4);
+    const m = mesh(geo, mat(i % 3 === 1 && c[1] ? c[1] : c[0])); m.position.set(x * 1.0, 0, z * 1.0); g.add(m);
+    const floor = mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.05, 6), mat(c[0])); floor.rotation.y = Math.PI / 6; floor.position.set(x, 0.03, z); g.add(floor);
+  });
+  g.scale.setScalar(0.8);
+  return g;
+};
+
+P.spicerack = (c) => { // Organizador de temperos em degraus
+  const g = new THREE.Group();
+  const m0 = mat(c[0]);
+  for (let i = 0; i < 3; i++) {
+    const step = mesh(planarY(new RoundedBoxGeometry(3.2, 0.12, 0.7, 3, 0.04)), m0);
+    step.position.set(0, 0.25 + i * 0.45, 0.5 - i * 0.55); g.add(step);
+    const riser = mesh(planarY(new RoundedBoxGeometry(3.2, 0.25 + i * 0.45 + 0.06, 0.08, 3, 0.03)), m0);
+    riser.position.set(0, (0.25 + i * 0.45) / 2, 0.85 - i * 0.55); g.add(riser);
+    for (let k = 0; k < 5; k++) {
+      const jar = new THREE.Group();
+      const glass = mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.55, 32), new THREE.MeshPhysicalMaterial({ color: "#f5efe6", roughness: 0.15, transmission: 0.0, metalness: 0, clearcoat: 1 }));
+      const lid = mesh(planarY(new THREE.CylinderGeometry(0.21, 0.21, 0.12, 32)), mat(c[1] ?? "#101113"));
+      const spiceColors = ["#B5452A", "#D9A441", "#5C7A3A", "#8C5A3C", "#C9762C"];
+      const fill = mesh(new THREE.CylinderGeometry(0.185, 0.185, 0.38, 32), new THREE.MeshStandardMaterial({ color: spiceColors[(k + i) % 5], roughness: 0.95 }));
+      glass.position.y = 0.28; lid.position.y = 0.6; fill.position.y = 0.21; glass.material.transparent = true; glass.material.opacity = 0.35;
+      jar.add(fill, glass, lid);
+      jar.position.set(-1.2 + k * 0.6, 0.31 + i * 0.45, 0.5 - i * 0.55);
+      g.add(jar);
+    }
+  }
+  const side = (x) => { const s = new THREE.Shape(); s.moveTo(0, 0); s.lineTo(1.55, 0); s.lineTo(1.55, 0.3); s.lineTo(0.15, 1.6); s.lineTo(0, 1.6); s.lineTo(0,0);
+    const geo = new THREE.ExtrudeGeometry(s, { depth: 0.08, bevelEnabled: false }); geo.rotateY(Math.PI / 2); planarY(geo, 1.3);
+    const m = mesh(geo, m0); m.position.set(x, 0, 0.95); return m; };
+  g.add(side(-1.64), side(1.56));
+  g.scale.setScalar(0.85);
+  return g;
+};
+
+P.booknook = (c) => { // Mini biblioteca decorativa
+  const g = new THREE.Group();
+  const m0 = mat(c[0]);
+  const back = mesh(planarY(new RoundedBoxGeometry(2.2, 2.6, 0.1, 3, 0.03)), m0); back.position.set(0, 1.3, -0.5); g.add(back);
+  [-1.05, 1.05].forEach((x) => { const s = mesh(planarY(new RoundedBoxGeometry(0.1, 2.6, 1.1, 3, 0.03)), m0); s.position.set(x, 1.3, 0); g.add(s); });
+  [0.05, 0.9, 1.75, 2.6].forEach((y) => { const s = mesh(planarY(new RoundedBoxGeometry(2.2, 0.1, 1.1, 3, 0.03)), m0); s.position.set(0, y, 0); g.add(s); });
+  const bookCols = [c[1] ?? "#00DCE8", "#F1F1F3", "#24272B", "#087F89", "#C8A27A", "#E86A50", "#F2C14E"];
+  [0.1, 0.95, 1.8].forEach((y, row) => {
+    let x = -0.95; let k = row * 3;
+    while (x < 0.9) {
+      const w = 0.09 + ((k * 37) % 7) / 100; const h = 0.5 + ((k * 13) % 5) / 30;
+      const lean = (k % 9 === 4) ? 0.25 : 0;
+      const b = mesh(new RoundedBoxGeometry(w, h, 0.62, 2, 0.015), new THREE.MeshStandardMaterial({ color: bookCols[k % bookCols.length], roughness: 0.6 }));
+      b.position.set(x + w / 2, y + h / 2 + 0.03, 0.05); b.rotation.z = -lean; g.add(b);
+      x += w + 0.015 + lean * 0.25; k++;
+      if (row === 1 && x > 0.2 && x < 0.5) { // pequena luminária
+        const lamp = mesh(new THREE.SphereGeometry(0.11, 24, 16), new THREE.MeshStandardMaterial({ color: "#fff3c4", emissive: "#ffcf6b", emissiveIntensity: 1.6 }));
+        lamp.position.set(x + 0.15, y + 0.62, 0.1); g.add(lamp); x += 0.35;
+      }
+    }
+  });
+  g.scale.setScalar(0.85);
+  return g;
+};
+
+P.calendar = (c) => { // Calendário perpétuo
+  const g = new THREE.Group();
+  const base = mesh(planarY(new RoundedBoxGeometry(2.6, 0.3, 1.0, 4, 0.08)), mat(c[0])); base.position.y = 0.15; g.add(base);
+  const cube = (x, txt, color) => {
+    const cv = document.createElement("canvas"); cv.width = cv.height = 256; const ctx = cv.getContext("2d");
+    ctx.fillStyle = color; ctx.fillRect(0, 0, 256, 256); ctx.fillStyle = c[1] ?? "#101113"; ctx.font = "bold 170px Inter, Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(txt, 128, 140);
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+    const mats = [mat(color), mat(color), mat(color), mat(color), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55, bumpMap: layers, bumpScale: 0.4 }), mat(color)];
+    const m = mesh(new RoundedBoxGeometry(0.72, 0.72, 0.72, 4, 0.06), mats); m.position.set(x, 0.66, 0.05); g.add(m);
+  };
+  cube(-0.85, "2", c[2] ?? "#F1F1F3"); cube(-0.05, "7", c[2] ?? "#F1F1F3");
+  const cv = document.createElement("canvas"); cv.width = 512; cv.height = 192; const ctx = cv.getContext("2d");
+  ctx.fillStyle = c[2] ?? "#F1F1F3"; ctx.fillRect(0, 0, 512, 192); ctx.fillStyle = c[1] ?? "#101113"; ctx.font = "bold 110px Inter, Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("NOV", 256, 104);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+  const mm = mat(c[2] ?? "#F1F1F3");
+  const month = mesh(new RoundedBoxGeometry(0.85, 0.34, 0.5, 3, 0.04), [mm, mm, mm, mm, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55 }), mm]);
+  month.position.set(0.82, 0.48, 0.15); g.add(month);
+  return g;
+};
+
+P.sculpture = (c) => { // Escultura geométrica "Órbita"
+  const g = new THREE.Group();
+  const knot = mesh(planarY(new THREE.TorusKnotGeometry(0.8, 0.22, 360, 48, 2, 3), 1.6), mat(c[0], { bump: 0.5, roughness: 0.4 }));
+  knot.position.y = 1.55; knot.rotation.x = 0.35; g.add(knot);
+  const ring = mesh(planarY(new THREE.TorusGeometry(1.35, 0.035, 16, 200)), mat(c[1] ?? "#00DCE8", { roughness: 0.3 }));
+  ring.position.y = 1.55; ring.rotation.x = Math.PI / 2.4; ring.rotation.y = 0.3; g.add(ring);
+  const base = mesh(planarY(new THREE.CylinderGeometry(0.75, 0.85, 0.25, 64)), mat(c[1] ?? "#24272B")); base.position.y = 0.125; g.add(base);
+  const post = mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.6, 16), mat(c[1] ?? "#24272B")); post.position.y = 0.5; g.add(post);
+  return g;
+};
+
+P.astronaut = (c) => { // Mini figura original "Astronauta Orbit"
+  const g = new THREE.Group();
+  const suit = mat(c[0], { bump: 0.35 }); const acc = mat(c[1] ?? "#00DCE8", { bump: 0.3 });
+  const head = mesh(planarY(new THREE.SphereGeometry(0.75, 64, 48)), suit); head.position.y = 2.15; head.scale.set(1.1, 1, 1); g.add(head);
+  const visor = mesh(new THREE.SphereGeometry(0.62, 64, 48, Math.PI * 0.08, Math.PI * 0.84, Math.PI * 0.28, Math.PI * 0.42),
+    new THREE.MeshPhysicalMaterial({ color: "#101113", roughness: 0.08, metalness: 0.4, clearcoat: 1, envMapIntensity: 1.6 }));
+  visor.position.set(0, 2.12, 0.2); visor.scale.set(1.12, 0.95, 1); g.add(visor);
+  const body = mesh(planarY(new THREE.CapsuleGeometry(0.5, 0.5, 12, 32)), suit); body.position.y = 1.05; g.add(body);
+  const pack = mesh(planarY(new RoundedBoxGeometry(0.8, 0.8, 0.35, 3, 0.1)), acc); pack.position.set(0, 1.15, -0.5); g.add(pack);
+  const chest = mesh(new RoundedBoxGeometry(0.42, 0.22, 0.1, 2, 0.04), acc); chest.position.set(0, 1.2, 0.48); g.add(chest);
+  [-1, 1].forEach((s) => {
+    const arm = mesh(planarY(new THREE.CapsuleGeometry(0.17, 0.45, 8, 16)), suit); arm.position.set(s * 0.62, 1.12, 0.05); arm.rotation.z = s * 0.45; g.add(arm);
+    const glove = mesh(new THREE.SphereGeometry(0.17, 24, 16), acc); glove.position.set(s * 0.8, 0.82, 0.08); g.add(glove);
+    const leg = mesh(planarY(new THREE.CapsuleGeometry(0.2, 0.3, 8, 16)), suit); leg.position.set(s * 0.24, 0.38, 0); g.add(leg);
+    const boot = mesh(new RoundedBoxGeometry(0.36, 0.18, 0.5, 2, 0.08), acc); boot.position.set(s * 0.24, 0.09, 0.06); g.add(boot);
+  });
+  const ant = mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.4, 8), acc); ant.position.set(0.35, 2.95, 0); ant.rotation.z = -0.3; g.add(ant);
+  const tipb = mesh(new THREE.SphereGeometry(0.07, 16, 12), new THREE.MeshStandardMaterial({ color: "#00DCE8", emissive: "#00DCE8", emissiveIntensity: 1.2 })); tipb.position.set(0.41, 3.14, 0); g.add(tipb);
+  g.scale.setScalar(0.78);
+  return g;
+};
+
+P.robot = (c) => { // Robô colecionável original "Bolt"
+  const g = new THREE.Group();
+  const b = mat(c[0], { bump: 0.35 }); const a = mat(c[1] ?? "#24272B", { bump: 0.3 });
+  const head = mesh(planarY(new RoundedBoxGeometry(1.3, 0.95, 1.0, 4, 0.22)), b); head.position.y = 2.15; g.add(head);
+  const face = mesh(new RoundedBoxGeometry(1.05, 0.62, 0.05, 3, 0.1), new THREE.MeshPhysicalMaterial({ color: "#101113", roughness: 0.15, clearcoat: 1 })); face.position.set(0, 2.15, 0.5); g.add(face);
+  [-0.25, 0.25].forEach((x) => { const e = mesh(new THREE.CapsuleGeometry(0.07, 0.12, 6, 12), new THREE.MeshStandardMaterial({ color: "#00DCE8", emissive: "#00DCE8", emissiveIntensity: 1.4 })); e.position.set(x, 2.18, 0.54); g.add(e); });
+  const body = mesh(planarY(new RoundedBoxGeometry(1.0, 0.95, 0.75, 4, 0.18)), b); body.position.y = 1.15; g.add(body);
+  const panel = mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.06, 32), a); panel.rotation.x = Math.PI / 2; panel.position.set(0, 1.2, 0.39); g.add(panel);
+  [-1, 1].forEach((s) => {
+    const ear = mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.14, 24), a); ear.rotation.z = Math.PI / 2; ear.position.set(s * 0.7, 2.15, 0); g.add(ear);
+    const arm = mesh(planarY(new THREE.CapsuleGeometry(0.14, 0.5, 8, 16)), a); arm.position.set(s * 0.68, 1.1, 0); arm.rotation.z = s * 0.2; g.add(arm);
+    const hand = mesh(new THREE.TorusGeometry(0.12, 0.05, 12, 24, Math.PI * 1.5), b); hand.position.set(s * 0.76, 0.68, 0); hand.rotation.z = Math.PI * 0.75; g.add(hand);
+    const leg = mesh(planarY(new RoundedBoxGeometry(0.34, 0.6, 0.4, 3, 0.1)), a); leg.position.set(s * 0.26, 0.3, 0); g.add(leg);
+  });
+  const ant = mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.35, 8), a); ant.position.y = 2.78; g.add(ant);
+  const bulb = mesh(new THREE.SphereGeometry(0.09, 16, 12), new THREE.MeshStandardMaterial({ color: "#00DCE8", emissive: "#00DCE8", emissiveIntensity: 1.2 })); bulb.position.y = 2.98; g.add(bulb);
+  g.scale.setScalar(0.8);
+  return g;
+};
+
+P.controllerstand = (c) => { // Suporte para dois controles
+  const g = new THREE.Group();
+  const m0 = mat(c[0]);
+  const base = mesh(planarY(new RoundedBoxGeometry(2.8, 0.18, 1.3, 4, 0.08)), m0); base.position.y = 0.09; g.add(base);
+  const post = mesh(planarY(new RoundedBoxGeometry(0.28, 2.3, 0.5, 4, 0.1)), m0); post.position.set(0, 1.2, -0.3); g.add(post);
+  [0.75, 1.95].forEach((y) => {
+    [-1, 1].forEach((s) => {
+      const arm = mesh(planarY(new RoundedBoxGeometry(0.22, 0.14, 0.95, 3, 0.05)), m0); arm.position.set(s * 0.5, y, 0.12); g.add(arm);
+      const lip = mesh(planarY(new RoundedBoxGeometry(0.22, 0.3, 0.12, 3, 0.05)), m0); lip.position.set(s * 0.5, y + 0.12, 0.56); g.add(lip);
+    });
+    // controle genérico apoiado (forma neutra, sem marca)
+    const pad = new THREE.Group();
+    const shell = new THREE.Shape();
+    shell.moveTo(-0.9, 0.05); shell.bezierCurveTo(-1.15, 0.0, -1.2, -0.55, -0.95, -0.7); shell.bezierCurveTo(-0.75, -0.8, -0.55, -0.4, -0.35, -0.35);
+    shell.lineTo(0.35, -0.35); shell.bezierCurveTo(0.55, -0.4, 0.75, -0.8, 0.95, -0.7); shell.bezierCurveTo(1.2, -0.55, 1.15, 0.0, 0.9, 0.05); shell.lineTo(-0.9, 0.05);
+    const pg = new THREE.ExtrudeGeometry(shell, { depth: 0.22, bevelEnabled: true, bevelSize: 0.08, bevelThickness: 0.08, bevelSegments: 6, curveSegments: 32 });
+    const pm = mesh(pg, new THREE.MeshStandardMaterial({ color: y > 1 ? "#F1F1F3" : "#24272B", roughness: 0.35 }));
+    pad.add(pm);
+    [-0.5, 0.45].forEach((x, i) => { const st = mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.12, 24), new THREE.MeshStandardMaterial({ color: "#101113", roughness: 0.6 })); st.rotation.x = Math.PI / 2; st.position.set(x, -0.18 - i * 0.1, 0.33); pad.add(st); });
+    pad.rotation.x = -1.05; pad.position.set(0, y + 0.42, 0.42); g.add(pad);
+  });
+  g.scale.setScalar(0.8);
+  return g;
+};
+
+P.headphonestand = (c) => { // Suporte para headphone
+  const g = new THREE.Group();
+  const m0 = mat(c[0]);
+  const base = mesh(planarY(new THREE.CylinderGeometry(0.85, 0.95, 0.18, 96)), m0); base.position.y = 0.09; g.add(base);
+  const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0.15, 0), new THREE.Vector3(0.15, 1.0, 0), new THREE.Vector3(-0.12, 2.0, 0), new THREE.Vector3(0, 2.75, 0)]);
+  const stem = mesh(planarY(new THREE.TubeGeometry(curve, 120, 0.13, 32, false), 1.0), m0); g.add(stem);
+  const top = new THREE.Shape(); top.absarc(0, 0, 0.75, Math.PI * 0.08, Math.PI * 0.92, false);
+  const topIn = new THREE.Path(); topIn.absarc(0, 0, 0.62, Math.PI * 0.92, Math.PI * 0.08, true);
+  top.holes = []; const tg = new THREE.ExtrudeGeometry(top, { depth: 0.55, bevelEnabled: true, bevelSize: 0.04, bevelThickness: 0.04, bevelSegments: 3, curveSegments: 48 });
+  const cradle = mesh(planarY(tg), mat(c[1] ?? c[0])); cradle.position.set(0, 2.15, -0.27); cradle.scale.y = 0.55; g.add(cradle);
+  // headphone genérico
+  const hp = new THREE.Group(); const hm = new THREE.MeshStandardMaterial({ color: "#24272B", roughness: 0.45 });
+  const band = mesh(new THREE.TorusGeometry(0.95, 0.07, 16, 64, Math.PI), hm); band.position.y = 2.15; hp.add(band);
+  [-1, 1].forEach((s) => {
+    const cup = mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.28, 48), hm); cup.rotation.z = Math.PI / 2; cup.position.set(s * 0.98, 1.95, 0); hp.add(cup);
+    const pad = mesh(new THREE.TorusGeometry(0.3, 0.1, 16, 48), new THREE.MeshStandardMaterial({ color: "#101113", roughness: 0.9 })); pad.rotation.y = Math.PI / 2; pad.position.set(s * 0.82, 1.95, 0); hp.add(pad);
+    const ring = mesh(new THREE.TorusGeometry(0.42, 0.025, 8, 48), new THREE.MeshStandardMaterial({ color: "#00DCE8", emissive: "#00DCE8", emissiveIntensity: 0.4 })); ring.rotation.y = Math.PI / 2; ring.position.set(s * 1.12, 1.95, 0); hp.add(ring);
+  });
+  hp.position.y = 0.72; hp.scale.setScalar(0.85); hp.position.y = 0.95; g.add(hp);
+  g.scale.setScalar(0.85);
+  return g;
+};
+
+P.phonestand = (c) => { // Suporte de celular
+  const g = new THREE.Group();
+  const s = new THREE.Shape();
+  s.moveTo(0, 0); s.lineTo(1.6, 0); s.lineTo(1.6, 0.12); s.lineTo(0.55, 0.12); s.lineTo(0.55, 0.32); s.lineTo(0.42, 0.32); s.lineTo(0.42, 0.18);
+  s.lineTo(0.25, 0.18); s.lineTo(1.05, 1.9); s.quadraticCurveTo(1.08, 2.02, 0.95, 2.0); s.lineTo(0.05, 0.12); s.lineTo(0, 0);
+  const geo = new THREE.ExtrudeGeometry(s, { depth: 1.3, bevelEnabled: true, bevelSize: 0.04, bevelThickness: 0.04, bevelSegments: 4 });
+  geo.translate(-0.8, 0, -0.65); geo.rotateY(Math.PI / 2); planarY(geo, 1.5);
+  g.add(mesh(geo, mat(c[0])));
+  const brace = mesh(planarY(new RoundedBoxGeometry(1.3, 0.12, 1.0, 3, 0.04)), mat(c[0])); brace.position.set(0, 0.06, 0.2); g.add(brace);
+  // celular genérico
+  const ph = new THREE.Group();
+  const bodyp = mesh(new RoundedBoxGeometry(1.05, 2.1, 0.09, 6, 0.04), new THREE.MeshStandardMaterial({ color: "#1b1d20", roughness: 0.3, metalness: 0.5 }));
+  const cv = document.createElement("canvas"); cv.width = 256; cv.height = 512; const ctx = cv.getContext("2d");
+  const gr = ctx.createLinearGradient(0, 0, 256, 512); gr.addColorStop(0, "#087F89"); gr.addColorStop(0.6, "#101113"); gr.addColorStop(1, "#00DCE8");
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, 256, 512);
+  ctx.fillStyle = "rgba(241,241,243,.9)"; ctx.font = "600 56px Inter, Arial"; ctx.textAlign = "center"; ctx.fillText("10:24", 128, 110);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+  const screen = mesh(new THREE.PlaneGeometry(0.97, 2.0), new THREE.MeshStandardMaterial({ map: tex, emissive: "#ffffff", emissiveMap: tex, emissiveIntensity: 0.55, roughness: 0.2 }));
+  screen.position.z = 0.047; ph.add(bodyp, screen);
+  ph.rotation.order = "YXZ"; ph.rotation.y = Math.PI; ph.rotation.x = 0.435; ph.position.set(0, 1.2, -0.17);
+  g.add(ph);
+  g.scale.setScalar(0.95);
+  return g;
+};
+
+P.planter = (c) => { // Vaso de suculenta geométrico
+  const g = new THREE.Group();
+  const geo = new THREE.CylinderGeometry(0.9, 0.62, 1.2, 7, 1, true); const geoIn = new THREE.CylinderGeometry(0.82, 0.55, 1.2, 7, 1, true);
+  const outer = mesh(planarY(geo, 1.3), mat(c[0], { bump: 0.8 })); outer.position.y = 0.6; outer.material.side = THREE.DoubleSide; g.add(outer);
+  const rim = mesh(new THREE.CylinderGeometry(0.9, 0.82, 0.03, 7), mat(c[0])); rim.position.y = 1.2; g.add(rim);
+  const soil = mesh(new THREE.CylinderGeometry(0.83, 0.83, 0.05, 7), new THREE.MeshStandardMaterial({ color: "#3b2a20", roughness: 1 })); soil.position.y = 1.08; g.add(soil);
+  const bottom = mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.05, 7), mat(c[0])); bottom.position.y = 0.025; g.add(bottom);
+  // suculenta
+  const leafM = new THREE.MeshStandardMaterial({ color: "#7FA58A", roughness: 0.55 });
+  for (let ring = 0; ring < 4; ring++) {
+    const n = 7 + ring * 2;
+    for (let i = 0; i < n; i++) {
+      const leaf = mesh(new THREE.SphereGeometry(0.2 - ring * 0.025, 16, 12), leafM);
+      leaf.scale.set(0.55, 0.3, 1.25);
+      const a = (i / n) * Math.PI * 2 + ring * 0.4; const r = 0.12 + ring * 0.1;
+      leaf.position.set(Math.cos(a) * r, 1.22 + (3 - ring) * 0.07, Math.sin(a) * r);
+      leaf.lookAt(new THREE.Vector3(Math.cos(a) * 3, 1.22 + (3 - ring) * 0.6, Math.sin(a) * 3));
+      g.add(leaf);
+    }
+  }
+  return g;
+};
+
+P.tray = (c) => { // Bandeja organizadora de mesa com compartimentos
+  const g = new THREE.Group();
+  const m0 = mat(c[0]); const ma = mat(c[1] ?? c[0]);
+  const W = 3.0, D = 1.8, H = 0.45, T = 0.07;
+  const floor = mesh(planarY(new RoundedBoxGeometry(W, 0.08, D, 4, 0.04)), m0); floor.position.y = 0.04; g.add(floor);
+  const wall = (w, d, x, z, m) => { const b = mesh(planarY(new RoundedBoxGeometry(w, H, d, 3, 0.03), 1.5), m); b.position.set(x, H / 2, z); g.add(b); };
+  wall(W, T, 0, D / 2 - T / 2, m0); wall(W, T, 0, -D / 2 + T / 2, m0); wall(T, D, W / 2 - T / 2, 0, m0); wall(T, D, -W / 2 + T / 2, 0, m0);
+  wall(T, D - 0.1, -0.4, 0, ma); wall(1.85, T, 0.55, 0.15, ma); wall(T, 0.75, 0.55, 0.52, ma);
+  // conteúdo: lápis, post-its, clipes
+  const cols = ["#F2C14E", "#E4572E", "#2E86AB", "#101113"];
+  cols.forEach((pc, i) => { const p = mesh(new THREE.CylinderGeometry(0.055, 0.055, 1.5, 6), new THREE.MeshStandardMaterial({ color: pc, roughness: 0.5 })); p.rotation.z = Math.PI / 2; p.rotation.y = 0.08 * (i - 1.5); p.position.set(0.45, 0.15, -0.15 - i * 0.16); g.add(p); });
+  const notes = mesh(new RoundedBoxGeometry(0.7, 0.28, 0.7, 2, 0.01), new THREE.MeshStandardMaterial({ color: "#FFE680", roughness: 0.9 })); notes.position.set(-0.95, 0.22, 0); notes.rotation.y = 0.2; g.add(notes);
+  for (let i = 0; i < 6; i++) { const clip = mesh(new THREE.TorusGeometry(0.07, 0.012, 8, 24), new THREE.MeshStandardMaterial({ color: "#c9cdd2", metalness: 1, roughness: 0.3 })); clip.rotation.x = -Math.PI / 2 + 0.3 * i; clip.position.set(0.15 + (i % 3) * 0.12, 0.1 + i * 0.01, 0.45 + Math.floor(i / 3) * 0.1); g.add(clip); }
+  const eraser = mesh(new RoundedBoxGeometry(0.3, 0.12, 0.18, 2, 0.03), new THREE.MeshStandardMaterial({ color: "#F1F1F3", roughness: 0.8 })); eraser.position.set(1.15, 0.14, 0.5); g.add(eraser);
+  g.scale.setScalar(0.85);
+  return g;
+};
+
+P.keychain = (c) => { // Chaveiro personalizado com nome
+  const g = new THREE.Group();
+  const cv = document.createElement("canvas"); cv.width = 1024; cv.height = 300; const ctx = cv.getContext("2d");
+  ctx.font = "800 210px Inter, Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const plate = mesh(planarY(new RoundedBoxGeometry(2.4, 0.8, 0.14, 4, 0.06)), mat(c[0])); plate.rotation.x = -Math.PI / 2; plate.position.y = 0.07; g.add(plate);
+  ctx.fillStyle = c[1] ?? "#F1F1F3"; ctx.fillText("LUNA", 512, 160);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+  const label = mesh(new THREE.PlaneGeometry(2.0, 0.59), new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.4 }), false);
+  label.rotation.x = -Math.PI / 2; label.position.set(0.1, 0.146, 0); g.add(label);
+  const ring = mesh(new THREE.TorusGeometry(0.28, 0.035, 16, 64), new THREE.MeshStandardMaterial({ color: "#c9cdd2", metalness: 1, roughness: 0.25 }));
+  ring.rotation.x = -Math.PI / 2; ring.position.set(-1.45, 0.06, 0); g.add(ring);
+  const hole = mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.16, 24), new THREE.MeshStandardMaterial({ color: "#101113" })); hole.position.set(-1.0, 0.07, 0); g.add(hole);
+  g.scale.setScalar(1.05);
+  return g;
+};
+
+// ───────── Cena ─────────
+window.renderProduct = async ({ kind, colors, angle = 0, elev = 0.32, bg = "light", zoom = 1, framing = 1 }) => {
+  const scene = new THREE.Scene();
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environmentIntensity = bg === "dark" ? 0.35 : 0.6;
+
+  const dark = bg === "dark";
+  // Fundo de estúdio (ciclorama)
+  const floorCol = dark ? "#16181b" : "#ECECEF";
+  const cyc = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshStandardMaterial({ color: floorCol, roughness: 0.95 }));
+  cyc.rotation.x = -Math.PI / 2; cyc.receiveShadow = true; scene.add(cyc);
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(60, 30), new THREE.MeshStandardMaterial({ color: dark ? "#121417" : "#F4F4F6", roughness: 1 }));
+  wall.position.set(0, 15, -12); scene.add(wall);
+
+  const key = new THREE.DirectionalLight(0xffffff, dark ? 2.2 : 2.6);
+  key.position.set(4, 7, 5); key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
+  key.shadow.camera.left = -5; key.shadow.camera.right = 5; key.shadow.camera.top = 5; key.shadow.camera.bottom = -5; key.shadow.radius = 8; key.shadow.blurSamples = 20; key.shadow.bias = -0.0004;
+  scene.add(key);
+  const fill = new THREE.DirectionalLight(0xffffff, dark ? 0.4 : 0.9); fill.position.set(-5, 3, 3); scene.add(fill);
+  const rim = new THREE.DirectionalLight(dark ? 0x00dce8 : 0xdffbfd, dark ? 3.0 : 1.2); rim.position.set(-3, 4, -6); scene.add(rim);
+  if (dark) { const rim2 = new THREE.PointLight(0x00dce8, 18, 12); rim2.position.set(3, 1.5, -3); scene.add(rim2); }
+  scene.add(new THREE.HemisphereLight(0xffffff, dark ? 0x101113 : 0xdddddd, dark ? 0.15 : 0.35));
+
+  const obj = P[kind](colors);
+  scene.add(obj);
+  // enquadramento
+  const box = new THREE.Box3().setFromObject(obj); const size = box.getSize(new THREE.Vector3()); const center = box.getCenter(new THREE.Vector3());
+  const radius = Math.max(size.x, size.y, size.z) * 0.62 * framing;
+  const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 200);
+  const dist = radius / Math.sin(THREE.MathUtils.degToRad(15)) / zoom;
+  cam.position.set(Math.sin(angle) * Math.cos(elev) * dist + center.x, center.y + Math.sin(elev) * dist, Math.cos(angle) * Math.cos(elev) * dist + center.z);
+  cam.lookAt(center.x, center.y - size.y * 0.02, center.z);
+  renderer.setClearColor(0x000000, 0);
+  renderer.render(scene, cam);
+  return renderer.domElement.toDataURL("image/png");
+};
+
+// Composição para o banner (vários objetos lado a lado, fundo escuro)
+window.renderHero = async (items, opts = {}) => {
+  const W = opts.w ?? 1920, H = opts.h ?? 1080;
+  renderer.setSize(W, H);
+  const scene = new THREE.Scene();
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.3;
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshStandardMaterial({ color: "#141619", roughness: 0.6, metalness: 0.2 }));
+  floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(80, 40), new THREE.MeshStandardMaterial({ color: "#101113", roughness: 1 })); wall.position.set(0, 20, -14); scene.add(wall);
+  const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(5, 9, 6); key.castShadow = true; key.shadow.mapSize.set(4096, 4096);
+  Object.assign(key.shadow.camera, { left: -12, right: 12, top: 10, bottom: -10 }); key.shadow.radius = 10; key.shadow.blurSamples = 24; key.shadow.bias = -0.0004; scene.add(key);
+  const rim = new THREE.DirectionalLight(0x00dce8, 3.2); rim.position.set(-6, 5, -8); scene.add(rim);
+  const rim2 = new THREE.PointLight(0x00dce8, 40, 20); rim2.position.set(4, 2, -4); scene.add(rim2);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.35); fill.position.set(-6, 3, 6); scene.add(fill);
+  // anel orbital luminoso
+  const orbit = new THREE.Mesh(new THREE.TorusGeometry(opts.orbitR ?? 7, 0.025, 12, 300), new THREE.MeshStandardMaterial({ color: "#00DCE8", emissive: "#00DCE8", emissiveIntensity: 2.2 }));
+  orbit.rotation.x = Math.PI / 2; orbit.position.set(opts.orbitX ?? 0, 0.03, opts.orbitZ ?? -1); if (!opts.noOrbit) scene.add(orbit);
+  items.forEach((it) => {
+    const o = P[it.kind](it.colors); o.position.set(it.x, 0, it.z ?? 0); o.rotation.y = it.ry ?? 0; o.scale.multiplyScalar(it.s ?? 1); scene.add(o);
+  });
+  const cam = new THREE.PerspectiveCamera(opts.fov ?? 28, W / H, 0.1, 200);
+  cam.position.set(...(opts.cam ?? [0, 4.5, 15])); cam.lookAt(...(opts.look ?? [0, 1.3, 0]));
+  renderer.setClearColor(0x000000, 0);
+  renderer.render(scene, cam);
+  const url = renderer.domElement.toDataURL("image/png");
+  renderer.setSize(SIZE, SIZE);
+  return url;
+};
+window.ready = true;
+</script>
+</body>
+</html>
