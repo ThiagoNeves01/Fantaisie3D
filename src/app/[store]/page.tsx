@@ -42,11 +42,11 @@ export default async function Home({ params }: PageProps<"/[store]">) {
         </div>
         {/* Órbita: elemento-assinatura inspirado no emblema, desenhado uma vez */}
         <svg className="pointer-events-none absolute inset-0 -z-0 hidden h-full w-full md:block" viewBox="0 0 1440 720" preserveAspectRatio="xMidYMid slice" aria-hidden>
-          <ellipse cx="930" cy="420" rx="560" ry="150" transform="rotate(-9 930 420)" fill="none" stroke="#00DCE8" strokeWidth="1.6" pathLength={1} className="orbit-path" opacity="0.85" />
-          <circle cx="1418" cy="300" r="4" fill="#00DCE8" opacity="0.9" />
+          <ellipse cx="1030" cy="430" rx="430" ry="140" transform="rotate(-9 1030 430)" fill="none" stroke="#00DCE8" strokeWidth="1.6" pathLength={1} className="orbit-path" opacity="0.85" />
+          <circle cx="1447" cy="362" r="4" fill="#00DCE8" opacity="0.9" />
         </svg>
         <div className="container-x relative flex min-h-[38rem] flex-col justify-center pt-16 pb-28 md:min-h-[42rem] md:pb-32 lg:min-h-[44rem]">
-          <h1 id="hero-title" className="max-w-[16ch] text-white">
+          <h1 id="hero-title" className="max-w-[16ch] text-white lg:max-w-[19ch]">
             <span className="hero-rise block font-display text-lg font-normal tracking-[0.04em] text-metal/70 sm:text-xl">{brand} —</span>
             <span className="hero-rise-2 mt-3 block text-[2.6rem] leading-[1.04] font-semibold sm:text-6xl lg:text-[4.25rem]">{claim}</span>
           </h1>
